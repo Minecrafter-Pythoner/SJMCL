@@ -87,6 +87,16 @@ jobs:
     
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history for release notes generation
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Download non-macOS artifacts
         uses: actions/download-artifact@v4
@@ -123,6 +133,59 @@ jobs:
           echo "Final release artifacts:"
           ls -la release-artifacts/
 
+      - name: Generate Release Notes
+        env:
+          VERSION: ${{ needs.Version-Check.outputs.version }}
+        run: |
+          # Create a simple script to generate release notes using conventional-changelog directly
+          cat > generate-notes.js << 'EOF'
+          const conventionalChangelog = require('conventional-changelog');
+          const fs = require('fs');
+          
+          let changelog = '';
+          
+          conventionalChangelog({
+            preset: 'angular'
+          })
+          .on('data', function(chunk) {
+            changelog += chunk.toString();
+          })
+          .on('end', function() {
+            // Clean up the output and save to file
+            const notes = changelog
+              .replace(/# \[\d+\.\d+\.\d+\]\([^)]+\) \(\d{4}-\d{2}-\d{2}\)/, '## What\'s Changed')
+              .replace(/### [A-Z][a-z]+/g, (match) => `**${match.substring(4)}:**`)
+              .trim();
+            
+            if (notes && notes.length > 0) {
+              fs.writeFileSync('release_notes.md', notes);
+            } else {
+              fs.writeFileSync('release_notes.md', '## Changes\n\n- See commit history for details');
+            }
+          });
+          EOF
+          
+          # Install conventional-changelog-cli
+          npm install --no-save conventional-changelog-cli conventional-changelog
+          
+          # Generate release notes
+          node generate-notes.js
+          
+          # Fallback if conventional changelog doesn't work
+          if [ ! -s release_notes.md ]; then
+            echo "## Changes in ${{ env.VERSION }}" > release_notes.md
+            echo "" >> release_notes.md
+            if git describe --tags --abbrev=0 HEAD^ >/dev/null 2>&1; then
+              LAST_TAG=$(git describe --tags --abbrev=0 HEAD^)
+              git log --pretty=format:"- %s" ${LAST_TAG}..HEAD >> release_notes.md
+            else
+              git log --pretty=format:"- %s" --max-count=20 >> release_notes.md
+            fi
+          fi
+          
+          echo "Generated release notes:"
+          cat release_notes.md
+
       - name: Create Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -130,9 +193,10 @@ jobs:
         run: |
           RELEASE_TAG="${{ env.VERSION }}"
           
-          # Create the release
+          # Create the release with generated notes
           gh release create "$GITHUB_REF_NAME" \
             --title "SJMCL ${{ env.VERSION }}" \
+            --notes-file release_notes.md \
             --draft \
             $PRERELEASE \
             ./release-artifacts/*
