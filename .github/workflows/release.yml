@@ -69,7 +69,9 @@ jobs:
       SJMCL_CURSEFORGE_API_KEY: ${{ secrets.SJMCL_CURSEFORGE_API_KEY }}
 
   Code-Sign-macOS:
+    if: ${{ secrets.MACOS_CERT_P12_BASE64 != '' && secrets.MACOS_CERT_P12_PASSWORD != '' && secrets.MACOS_SIGNING_IDENTITY != '' && secrets.MACOS_NOTARY_APPLE_ID != '' && secrets.MACOS_NOTARY_PASSWORD != '' && secrets.MACOS_NOTARY_TEAM_ID != '' }}
     needs: [Version-Check, Build-and-Release]
+    continue-on-error: true
     uses: ./.github/workflows/sign-macos.yml
     with:
       version: ${{ needs.Version-Check.outputs.version }}
@@ -84,6 +86,7 @@ jobs:
   Create-Release:
     needs: [Version-Check, Build-and-Release, Code-Sign-macOS]
     runs-on: ubuntu-latest
+    if: ${{ always() }}
     
     steps:
       - uses: actions/checkout@v4
@@ -103,12 +106,14 @@ jobs:
           pattern: 'SJMCL_${{ needs.Version-Check.outputs.version }}_macos_*_signed'
           path: artifacts-signed
           merge-multiple: true
+        continue-on-error: true
 
       - name: Organize release artifacts
         env:
           VERSION: ${{ needs.Version-Check.outputs.version }}
         run: |
           mkdir -p release-artifacts
+          mkdir -p artifacts-signed
           
           # Copy non-macOS artifacts
           find artifacts -name "SJMCL_${{ env.VERSION }}_windows_*" -exec cp {} release-artifacts/ \;
@@ -121,6 +126,12 @@ jobs:
             newname=$(echo "$basename" | sed 's/_signed\./\./')
             cp "$file" "release-artifacts/$newname"
           done
+
+          # If no signed macOS artifacts found, fall back to unsigned ones
+          if ! find artifacts-signed -name "SJMCL_${{ env.VERSION }}_macos_*" -type f 2>/dev/null | grep -q .; then
+            echo "No signed macOS artifacts found. Using unsigned macOS artifacts."
+            find artifacts -name "SJMCL_${{ env.VERSION }}_macos_*" -type f -exec cp {} release-artifacts/ \;
+          fi
           
           echo "Final release artifacts:"
           ls -la release-artifacts/

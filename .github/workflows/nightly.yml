@@ -158,7 +158,8 @@ jobs:
 
   Sign-macOS-Artifacts:
     needs: [Check-and-Prepare, Build-Nightly]
-    if: needs.Check-and-Prepare.outputs.should_build == 'true'
+    if: ${{ needs.Check-and-Prepare.outputs.should_build == 'true' && secrets.MACOS_CERT_P12_BASE64 != '' && secrets.MACOS_CERT_P12_PASSWORD != '' && secrets.MACOS_SIGNING_IDENTITY != '' && secrets.MACOS_NOTARY_APPLE_ID != '' && secrets.MACOS_NOTARY_PASSWORD != '' && secrets.MACOS_NOTARY_TEAM_ID != '' }}
+    continue-on-error: true
     uses: ./.github/workflows/sign-macos.yml
     with:
       version: "nightly_${{ needs.Check-and-Prepare.outputs.nightly_version }}"
@@ -172,7 +173,7 @@ jobs:
 
   Create-Nightly-Release:
     needs: [Check-and-Prepare, Build-Nightly, Sign-macOS-Artifacts]
-    if: needs.Check-and-Prepare.outputs.should_build == 'true'
+    if: ${{ always() && needs.Check-and-Prepare.outputs.should_build == 'true' }}
     runs-on: ubuntu-latest
     
     steps:
@@ -185,16 +186,21 @@ jobs:
         with:
           path: artifacts
 
-      - name: Remove unsigned macOS artifacts to avoid conflicts
+      - name: Prefer signed macOS artifacts if available
         run: |
-          echo "Removing unsigned macOS artifacts to prevent filename conflicts..."
-          # Remove unsigned macOS artifacts since we have signed versions
-          rm -rf ./artifacts/SJMCL_*_macos_aarch64/
-          rm -rf ./artifacts/SJMCL_*_macos_x86_64/
-          echo "Unsigned macOS artifacts removed"
+          echo "Checking for signed macOS artifacts..."
+          SIGNED_COUNT=$(find ./artifacts -maxdepth 1 -type d -name "SJMCL_*_macos_*_signed" | wc -l | tr -d ' ')
+          if [ "$SIGNED_COUNT" != "0" ]; then
+            echo "Signed macOS artifacts found ($SIGNED_COUNT). Removing unsigned macOS artifacts to avoid conflicts..."
+            rm -rf ./artifacts/SJMCL_*_macos_aarch64/
+            rm -rf ./artifacts/SJMCL_*_macos_x86_64/
+            echo "Unsigned macOS artifacts removed"
+          else
+            echo "No signed macOS artifacts found. Keeping unsigned macOS artifacts."
+          fi
           
           echo "Remaining artifacts:"
-          ls -la ./artifacts/*/*
+          ls -la ./artifacts/*/* || true
 
       - name: Delete existing nightly release if exists
         env:
