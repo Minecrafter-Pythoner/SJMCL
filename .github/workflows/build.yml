@@ -112,8 +112,14 @@ jobs:
         env:
           SJMCL_CURSEFORGE_API_KEY: ${{ secrets.SJMCL_CURSEFORGE_API_KEY }}
 
-      - name: Build the app
-        if: matrix.platform != 'macos'
+      - name: Build the app (Windows)
+        if: matrix.platform == 'windows'
+        run: pnpm run tauri build --bundles nsis --target ${{ matrix.target }}
+        env:
+          SJMCL_CURSEFORGE_API_KEY: ${{ secrets.SJMCL_CURSEFORGE_API_KEY }}
+
+      - name: Build the app (Linux)
+        if: matrix.platform == 'linux'
         run: pnpm run tauri build --target ${{ matrix.target }}
         env:
           SJMCL_CURSEFORGE_API_KEY: ${{ secrets.SJMCL_CURSEFORGE_API_KEY }}
@@ -130,7 +136,7 @@ jobs:
             python scripts/release/bundle_portable_assets.py -p "src-tauri/target/${{ matrix.target }}/release/" "SJMCL.exe"
             # For Windows, copy the portable exe
             mv "src-tauri/target/${{ matrix.target }}/release/SJMCL-patched.exe" artifacts/"$ARTIFACT_NAME"_portable.exe
-            mv "src-tauri/target/${{ matrix.target }}/release/bundle/msi/"*.msi artifacts/"$ARTIFACT_NAME".msi
+            mv "src-tauri/target/${{ matrix.target }}/release/bundle/nsis/"*.exe artifacts/"$ARTIFACT_NAME"_setup.exe
             ls -la artifacts
           elif [ "${{ matrix.platform }}" = "macos" ]; then
             ls src-tauri/target/${{ matrix.target }}/release/bundle/macos
