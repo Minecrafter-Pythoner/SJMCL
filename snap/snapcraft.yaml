@@ -1,0 +1,47 @@
+name: sjmcl
+base: core22
+version: '0.0.0'
+summary: Next-generation open-source cross-platform Minecraft launcher
+description: |
+  SJMCL is a next-generation open-source cross-platform Minecraft Launcher developed by Shanghai Jiao Tong University Minecraft Club.
+
+grade: stable
+confinement: strict
+
+plugs:
+  dot-minecraft:
+    interface: personal-files
+    write:
+      - $HOME/.minecraft
+  dot-jdks:
+    interface: personal-files
+    read:
+      - $HOME/.jdks
+      - $HOME/.sdkman/candidates/java
+
+apps:
+  sjmcl:
+    command: usr/bin/SJMCL
+    desktop: usr/share/applications/SJMCL.desktop
+    extensions: [gnome]
+    plugs:
+      - home
+      - network
+      - network-bind
+      - opengl
+      - x11
+      - wayland
+      - desktop
+      - desktop-legacy
+      - audio-playback
+      - removable-media
+      - dot-minecraft
+      - dot-jdks
+
+parts:
+  sjmcl:
+    plugin: dump
+    source: sjmcl.deb
+    source-type: deb
+    stage-packages:
+      - libwebkit2gtk-4.1-0

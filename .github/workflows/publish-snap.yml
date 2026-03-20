@@ -1,0 +1,79 @@
+name: Publish Snap Package
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish"
+        required: true
+      channel:
+        description: "Snap store channel (stable, candidate, beta, edge)"
+        required: false
+        default: "stable"
+  workflow_call:
+    inputs:
+      version:
+        description: "Version to publish"
+        required: true
+        type: string
+      channel:
+        description: "Snap store channel"
+        required: false
+        type: string
+        default: "stable"
+    secrets:
+      SNAPCRAFT_STORE_CREDENTIALS:
+        description: "Snapcraft store login credentials"
+        required: true
+
+jobs:
+  publish-snap:
+    name: Publish Snap (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x86_64
+            snap_arch: amd64
+          - os: ubuntu-22.04-arm
+            arch: aarch64
+            snap_arch: arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download deb artifact
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "SJMCL_${{ inputs.version }}_linux_${{ matrix.arch }}"
+          path: artifacts
+          merge-multiple: true
+
+      - name: Prepare snap build
+        run: |
+          cp "artifacts/SJMCL_${{ inputs.version }}_linux_${{ matrix.arch }}.deb" sjmcl.deb
+          sed -i "s/^version:.*/version: '${{ inputs.version }}'/" snap/snapcraft.yaml
+
+          echo "snapcraft.yaml:"
+          cat snap/snapcraft.yaml
+
+      - name: Install snapcraft
+        run: sudo snap install snapcraft --classic
+
+      - name: Build snap
+        run: snapcraft --destructive-mode
+
+      - name: Upload to Snap Store
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        run: |
+          CHANNEL="${{ inputs.channel || 'stable' }}"
+          SNAP_FILE=$(ls *.snap)
+          echo "Uploading $SNAP_FILE to channel: $CHANNEL"
+          snapcraft upload --release="$CHANNEL" "$SNAP_FILE"
